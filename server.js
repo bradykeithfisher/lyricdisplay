@@ -3,14 +3,16 @@
 // Runs on Render (or any host with Node.js 18+). No dependencies.
 //
 // Settings (environment variables):
-//   LYRICS_KEY  required. Secret shared with the church computer's config.json.
-//   PORT        set automatically by Render.
+//   LYRICS_KEY      required. Secret shared with the church computer's config.json.
+//   ADMIN_PASSWORD  optional. Password for the /config page (defaults to LYRICS_KEY).
+//   PORT            set automatically by Render.
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
 const KEY = process.env.LYRICS_KEY || '';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || KEY;
 const PORT = Number(process.env.PORT || 10000);
 const OFFLINE_AFTER_MS = Number(process.env.OFFLINE_AFTER_SECONDS || 150) * 1000; // no word from the church computer for 2.5 min => show "waiting"
 const MAX_TEXT = 5000;
@@ -21,7 +23,44 @@ let state = { connected: false, current: '', next: '', updated: Date.now() };
 let lastPush = 0;
 const clients = new Set();
 
-const json = () => JSON.stringify(state);
+// ---------- display settings (edited on /config) ----------
+// Render's free plan forgets files on restart, so the church computer keeps a
+// copy: we return the settings on every /update, and it sends them back to us.
+const DEFAULTS = {
+  bg: '#111111', fg: '#f5f5f5', font: 'sans', bold: true, size: 100,
+  position: 'center', textAlign: 'center', uppercase: false, showNext: false,
+  idleText: 'Lyrics will appear here during worship.', title: 'Lyrics',
+  savedAt: 0,
+};
+let settings = { ...DEFAULTS };
+
+function cleanSettings(input, base = DEFAULTS) {
+  const s = { ...base };
+  const color = v => /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(v) ? v.toLowerCase() : undefined;
+  const pick = (v, list) => list.includes(v) ? v : undefined;
+  const set = (k, v) => { if (v !== undefined) s[k] = v; };
+  if (!input || typeof input !== 'object') return s;
+  set('bg', color(input.bg));
+  set('fg', color(input.fg));
+  set('font', pick(input.font, ['sans', 'serif', 'rounded', 'condensed']));
+  set('position', pick(input.position, ['center', 'top', 'bottom']));
+  set('textAlign', pick(input.textAlign, ['center', 'left']));
+  for (const k of ['bold', 'uppercase', 'showNext']) if (typeof input[k] === 'boolean') s[k] = input[k];
+  const n = Number(input.size);
+  if (Number.isFinite(n)) s.size = Math.round(Math.min(250, Math.max(40, n)));
+  if (typeof input.idleText === 'string') s.idleText = input.idleText.slice(0, 200);
+  if (typeof input.title === 'string') s.title = input.title.slice(0, 60) || 'Lyrics';
+  if (Number.isFinite(Number(input.savedAt))) s.savedAt = Number(input.savedAt);
+  return s;
+}
+
+const json = () => JSON.stringify({
+  connected: state.connected,
+  current: state.current,
+  next: settings.showNext ? state.next : '',
+  updated: state.updated,
+  settings,
+});
 function broadcast() {
   const msg = `data: ${json()}\n\n`;
   for (const res of clients) res.write(msg);
@@ -58,14 +97,51 @@ const server = http.createServer(async (req, res) => {
       const s = v => String(v || '').slice(0, MAX_TEXT);
       const next = { connected: d.connected !== false, current: s(d.current), next: s(d.next) };
       lastPush = Date.now();
+      let changed = false;
+      // Restore saved settings after a restart (the church computer's copy is newer)
+      if (d.settings && Number(d.settings.savedAt) > settings.savedAt) {
+        settings = cleanSettings(d.settings);
+        console.log('Restored display settings from the church computer');
+        changed = true;
+      }
       if (next.connected !== state.connected || next.current !== state.current || next.next !== state.next) {
         state = { ...next, updated: Date.now() };
-        broadcast();
+        changed = true;
       }
-      res.writeHead(204); return res.end();
+      if (changed) broadcast();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ settings }));
     } catch {
       res.writeHead(400); return res.end('bad request');
     }
+  }
+
+  // Display settings
+  if (url.pathname === '/api/settings') {
+    if (req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      // synced: the church computer has checked in since the last save, so it has a copy
+      return res.end(JSON.stringify({ ...settings, synced: lastPush > settings.savedAt }));
+    }
+    if (req.method === 'POST') {
+      if (!ADMIN_PASSWORD || !safeEqual(req.headers['x-admin-password'] || '', ADMIN_PASSWORD)) {
+        res.writeHead(401); return res.end('wrong password');
+      }
+      try {
+        const input = JSON.parse(await readBody(req));
+        if (input.reset) settings = { ...DEFAULTS, savedAt: Date.now() };
+        else settings = { ...cleanSettings(input, settings), savedAt: Date.now() };
+        broadcast();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(settings));
+      } catch {
+        res.writeHead(400); return res.end('bad request');
+      }
+    }
+  }
+  if (url.pathname === '/config' || url.pathname === '/config/') {
+    req.url = '/config.html';
+    url.pathname = '/config.html';
   }
 
   // Viewers listen here
