@@ -118,6 +118,11 @@
     };
   }
 
+  // Safety net: if live updates are held up somewhere, catch up every 5 seconds.
+  setInterval(async () => {
+    try { const r = await fetch('api/current', { cache: 'no-store' }); if (r.ok) show(await r.json()); } catch {}
+  }, 5000);
+
   window.addEventListener('resize', fit);
   connect();
 </script>
