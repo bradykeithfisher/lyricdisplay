@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Lyrics display settings</title>
+<style>
+  :root {
+    --ink: #1d1d1f; --sub: #6e6e73; --line: #e3e3e6; --panel: #ffffff; --page: #f4f4f2;
+    --accent: #2f5d8a; --ok: #2e7d4f; --bad: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 22px 28px 6px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
+  header p { margin: 4px 0 0; color: var(--sub); }
+  main { display: grid; grid-template-columns: minmax(300px, 400px) 1fr; gap: 24px; padding: 16px 28px 32px; align-items: start; }
+  @media (max-width: 820px) { main { grid-template-columns: 1fr; padding: 12px 14px 28px; } header { padding: 18px 14px 4px; } .preview { order: -1; position: static; } }
+  form { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px 20px 20px; }
+  fieldset { border: 0; border-bottom: 1px solid var(--line); margin: 0; padding: 14px 0; }
+  fieldset:last-of-type { border-bottom: 0; }
+  legend { font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--sub); padding: 0; margin-bottom: 8px; }
+  label.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0; }
+  .presets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .preset { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
+  .preset:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=color] { width: 44px; height: 32px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
+  select, input[type=text], input[type=password], textarea {
+    font: inherit; padding: 7px 9px; border: 1px solid #cfcfd4; border-radius: 7px; background: #fff; color: var(--ink);
+  }
+  select { min-width: 160px; }
+  textarea, input[type=text], input[type=password] { width: 100%; }
+  textarea { resize: vertical; min-height: 56px; }
+  .seg { display: inline-flex; border: 1px solid #cfcfd4; border-radius: 7px; overflow: hidden; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg label { padding: 6px 12px; cursor: pointer; font-size: 14px; border-left: 1px solid #cfcfd4; }
+  .seg label:first-of-type { border-left: 0; }
+  .seg input:checked + label { background: var(--accent); color: #fff; }
+  .seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: -2px; }
+  input[type=range] { width: 170px; accent-color: var(--accent); }
+  input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+  .size-val { font-variant-numeric: tabular-nums; color: var(--sub); min-width: 3.5em; text-align: right; }
+  .actions { display: flex; gap: 10px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+  button.primary { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.primary:disabled { opacity: .6; cursor: default; }
+  button.link { background: none; border: 0; color: var(--sub); text-decoration: underline; cursor: pointer; font: inherit; font-size: 14px; }
+  #msg { font-size: 14px; min-height: 1.4em; margin-top: 10px; }
+  #msg.ok { color: var(--ok); } #msg.bad { color: var(--bad); }
+  #backup { font-size: 13px; color: var(--sub); margin-top: 4px; }
+  .preview { position: sticky; top: 16px; }
+  .frame { border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #000; aspect-ratio: 16 / 9; }
+  .frame.phone { aspect-ratio: 9 / 16; max-width: 300px; margin: 0 auto; }
+  iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .preview-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; color: var(--sub); font-size: 13px; }
+  .hint { color: var(--sub); font-size: 13px; margin: 2px 0 0; }
+  @media (max-width: 820px) { .preview { position: static; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Lyrics display settings</h1>
+  <p>Changes apply to everyone viewing the lyrics page as soon as you save.</p>
+</header>
+<main>
+  <form id="f" autocomplete="off">
+    <fieldset>
+      <legend>Colors</legend>
+      <div class="presets" id="presets"></div>
+      <label class="row">Background <input type="color" name="bg"></label>
+      <label class="row">Text <input type="color" name="fg"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Text</legend>
+      <label class="row">Font
+        <select name="font">
+          <option value="sans">Clean (default)</option>
+          <option value="serif">Serif</option>
+          <option value="rounded">Rounded</option>
+          <option value="condensed">Condensed</option>
+        </select>
+      </label>
+      <label class="row">Size
+        <span style="display:flex;align-items:center;gap:8px">
+          <input type="range" name="size" min="40" max="250" step="5">
+          <span class="size-val" id="sizeVal"></span>
+        </span>
+      </label>
+      <p class="hint">Long slides still shrink to fit the screen.</p>
+      <label class="row">Bold <input type="checkbox" name="bold"></label>
+      <label class="row">ALL CAPS <input type="checkbox" name="uppercase"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Layout</legend>
+      <div class="row" style="display:flex;justify-content:space-between;align-items:center;margin:8px 0">
+        <span>Position</span>
+        <span class="seg">
+          <input type="radio" name="position" value="top" id="p-top"><label for="p-top">Top</label>
+          <input type="radio" name="position" value="center" id="p-center"><label for="p-center">Middle</label>
+          <input type="radio" name="position" value="bottom" id="p-bottom"><label for="p-bottom">Bottom</label>
+        </span>
+      </div>
+      <div class="row" style="display:flex;justify-content:space-between;align-items:center;margin:8px 0">
+        <span>Line alignment</span>
+        <span class="seg">
+          <input type="radio" name="textAlign" value="center" id="a-center"><label for="a-center">Centered</label>
+          <input type="radio" name="textAlign" value="left" id="a-left"><label for="a-left">Left</label>
+        </span>
+      </div>
+      <label class="row">Show next slide underneath <input type="checkbox" name="showNext"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Wording</legend>
+      <label>Message when no lyrics are showing
+        <textarea name="idleText" maxlength="200"></textarea>
+      </label>
+      <label style="display:block;margin-top:10px">Browser tab title
+        <input type="text" name="title" maxlength="60">
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Save</legend>
+      <label>Password
+        <input type="password" name="password" autocomplete="current-password" placeholder="Same as your LYRICS_KEY">
+      </label>
+      <div class="actions">
+        <button class="primary" type="submit" id="save">Save for everyone</button>
+        <button class="link" type="button" id="reset">Reset to defaults</button>
+        <button class="link" type="button" id="revert">Undo unsaved changes</button>
+      </div>
+      <div id="msg" role="status" aria-live="polite"></div>
+      <div id="backup"></div>
+    </fieldset>
+  </form>
+
+  <section class="preview" aria-label="Preview">
+    <div class="preview-bar">
+      <span>Preview (sample lyrics; not live until saved)</span>
+      <span class="seg" style="font-size:13px">
+        <input type="radio" name="device" value="wide" id="d-wide" checked><label for="d-wide">TV</label>
+        <input type="radio" name="device" value="phone" id="d-phone"><label for="d-phone">Phone</label>
+      </span>
+    </div>
+    <div class="frame" id="frame"><iframe id="pv" src="/?preview=1" title="Preview of the lyrics page"></iframe></div>
+  </section>
+</main>
+
+<script>
+  const PRESETS = [
+    { name: 'Dark', bg: '#111111', fg: '#f5f5f5' },
+    { name: 'Light', bg: '#fafaf7', fg: '#1a1a1a' },
+    { name: 'Navy', bg: '#14233c', fg: '#ffffff' },
+    { name: 'High contrast', bg: '#000000', fg: '#ffd400' },
+    { name: 'Green screen', bg: '#00b140', fg: '#ffffff' },
+  ];
+  const f = document.getElementById('f');
+  const msg = document.getElementById('msg');
+  const backup = document.getElementById('backup');
+  const pv = document.getElementById('pv');
+  let saved = null;
+
+  for (const p of PRESETS) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'preset'; b.textContent = p.name;
+    b.style.background = p.bg; b.style.color = p.fg;
+    b.onclick = () => { f.bg.value = p.bg; f.fg.value = p.fg; update(); };
+    document.getElementById('presets').append(b);
+  }
+
+  function expand(c) { // #abc -> #aabbcc for <input type=color>
+    return /^#[0-9a-f]{3}$/i.test(c) ? '#' + [...c.slice(1)].map(x => x + x).join('') : c;
+  }
+
+  function fill(s) {
+    f.bg.value = expand(s.bg); f.fg.value = expand(s.fg);
+    f.font.value = s.font; f.size.value = s.size;
+    f.bold.checked = s.bold; f.uppercase.checked = s.uppercase; f.showNext.checked = s.showNext;
+    f.querySelector(`[name=position][value=${s.position}]`).checked = true;
+    f.querySelector(`[name=textAlign][value=${s.textAlign}]`).checked = true;
+    f.idleText.value = s.idleText; f.title.value = s.title;
+    update();
+  }
+
+  function read() {
+    return {
+      bg: f.bg.value, fg: f.fg.value, font: f.font.value, size: Number(f.size.value),
+      bold: f.bold.checked, uppercase: f.uppercase.checked, showNext: f.showNext.checked,
+      position: f.querySelector('[name=position]:checked')?.value || 'center',
+      textAlign: f.querySelector('[name=textAlign]:checked')?.value || 'center',
+      idleText: f.idleText.value, title: f.title.value,
+    };
+  }
+
+  function update() {
+    if (!saved) return; // wait until the current settings have loaded
+    document.getElementById('sizeVal').textContent = f.size.value + '%';
+    pv.contentWindow?.postMessage({ type: 'preview', settings: read() }, location.origin);
+    {
+      const dirty = JSON.stringify(read()) !== JSON.stringify(pick(saved));
+      document.getElementById('save').textContent = dirty ? 'Save for everyone' : 'Saved';
+    }
+  }
+  const pick = s => Object.fromEntries(Object.keys(read()).map(k => [k, k === 'bg' || k === 'fg' ? expand(s[k]) : s[k]]));
+
+  f.addEventListener('input', update);
+  pv.addEventListener('load', update);
+  document.querySelectorAll('[name=device]').forEach(r => r.addEventListener('change', () =>
+    document.getElementById('frame').classList.toggle('phone', r.value === 'phone' && r.checked)));
+
+  try { f.password.value = localStorage.getItem('lyricsAdminPw') || ''; } catch {}
+
+  async function load() {
+    const r = await fetch('/api/settings', { cache: 'no-store' });
+    const s = await r.json();
+    showBackup(s);
+    return s;
+  }
+
+  function showBackup(s) {
+    if (!s.savedAt) backup.textContent = '';
+    else if (s.synced) backup.textContent = '✓ A copy is saved on the lyrics computer, so these settings will survive website restarts.';
+    else backup.textContent = 'These settings get copied to the lyrics computer the next time the lyrics program runs (within a minute if it is running now). Until then, a website restart would undo them.';
+  }
+
+  async function send(body) {
+    const pw = f.password.value.trim();
+    if (!pw) { msg.className = 'bad'; msg.textContent = 'Enter the password first.'; f.password.focus(); return; }
+    document.getElementById('save').disabled = true;
+    msg.className = ''; msg.textContent = 'Saving…';
+    try {
+      const r = await fetch('/api/settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Password': pw }, body: JSON.stringify(body),
+      });
+      if (r.status === 401) throw new Error('Wrong password.');
+      if (!r.ok) throw new Error('Could not save (error ' + r.status + ').');
+      saved = await r.json();
+      try { localStorage.setItem('lyricsAdminPw', pw); } catch {}
+      fill(saved);
+      showBackup({ ...saved, synced: false });
+      msg.className = 'ok'; msg.textContent = 'Saved. Everyone’s screen has been updated.';
+    } catch (e) {
+      msg.className = 'bad'; msg.textContent = e.message || 'Could not reach the website.';
+    } finally {
+      document.getElementById('save').disabled = false;
+    }
+  }
+
+  f.addEventListener('submit', e => { e.preventDefault(); send(read()); });
+  document.getElementById('reset').onclick = () => { if (confirm('Reset every setting to the original look for everyone?')) send({ reset: true }); };
+  document.getElementById('revert').onclick = () => { if (saved) { fill(saved); msg.textContent = ''; } };
+
+  load().then(s => { saved = s; fill(s); })
+       .catch(() => { msg.className = 'bad'; msg.textContent = 'Could not load the current settings. Refresh to try again.'; });
+  setInterval(() => load().catch(() => {}), 10000);
+</script>
+</body>
+</html>

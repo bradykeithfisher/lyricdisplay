@@ -3,45 +3,44 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#111">
+<meta name="theme-color" content="#111111">
 <title>Lyrics</title>
 <style>
   /*
-    URL options (combine with &):
-      ?theme=light          light background, dark text
-      ?bg=transparent       transparent background (for OBS / video overlays)
-      ?bg=00ff00            any hex background color (e.g. green screen)
-      ?color=ffffff         text color
-      ?align=bottom         put lyrics at the bottom (lower-third style)
-      ?font=serif           serif typeface
-      ?max=72               largest font size in px (text shrinks to fit)
+    Look is set on the /config page and applies to everyone.
+    Address options override it for one screen only (combine with &):
+      ?theme=light | ?bg=transparent | ?bg=00ff00 | ?color=ffffff
+      ?align=bottom | ?font=serif | ?size=120 (percent)
   */
-  :root { --bg: #111; --fg: #f5f5f5; --muted: rgba(245,245,245,.45); --max: 64px; }
-  body.light { --bg: #fafaf7; --fg: #1a1a1a; --muted: rgba(26,26,26,.45); }
+  :root {
+    --bg: #111111; --fg: #f5f5f5;
+    --muted: color-mix(in srgb, var(--fg) 45%, transparent);
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --weight: 600; --align: center;
+  }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
   body {
-    background: var(--bg); color: var(--fg);
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--fg); font-family: var(--font);
     display: flex; flex-direction: column; justify-content: center;
     padding: max(4vh, env(safe-area-inset-top)) 5vw max(4vh, env(safe-area-inset-bottom));
-    overflow: hidden;
+    overflow: hidden; transition: background-color .3s, color .3s;
   }
-  body.bottom { justify-content: flex-end; }
-  body.serif { font-family: Georgia, "Times New Roman", serif; }
+  body.pos-top { justify-content: flex-start; }
+  body.pos-bottom { justify-content: flex-end; }
   #stage { flex: 0 1 auto; max-height: 100%; display: flex; flex-direction: column; gap: 1.2em; }
   #current {
-    font-size: var(--max); font-weight: 600; line-height: 1.3; text-align: center;
-    white-space: pre-line; overflow-wrap: break-word;
-    transition: opacity .25s ease;
+    font-weight: var(--weight); line-height: 1.3; text-align: var(--align);
+    white-space: pre-line; overflow-wrap: break-word; transition: opacity .25s ease;
   }
+  body.upper #current, body.upper #next { text-transform: uppercase; }
   body.transparent #current { text-shadow: 0 2px 6px rgba(0,0,0,.8); }
   #next {
-    color: var(--muted); text-align: center; white-space: pre-line;
+    color: var(--muted); text-align: var(--align); white-space: pre-line;
     border-top: 1px solid var(--muted); padding-top: .8em;
   }
-  #next:empty { display: none; }
-  #idle { text-align: center; color: var(--muted); font-size: 20px; display: none; }
+  #next:empty, body.no-next #next { display: none; }
+  #idle { text-align: center; color: var(--muted); font-size: 20px; display: none; white-space: pre-line; }
   body.idle #idle { display: block; }
   body.idle #stage { display: none; }
   .fading { opacity: 0; }
@@ -50,8 +49,7 @@
     color: var(--muted); display: flex; align-items: center; gap: 6px;
   }
   #status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #c33; }
-  #status.ok, body.idle #status { display: none; }
-  body.transparent #status { display: none; }
+  #status.ok, body.idle #status, body.transparent #status { display: none; }
 </style>
 </head>
 <body>
@@ -63,47 +61,78 @@
   <div id="status">Connecting…</div>
 
 <script>
+  const FONTS = {
+    sans: 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+    serif: 'Georgia, "Times New Roman", serif',
+    rounded: 'ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", "Varela Round", system-ui, sans-serif',
+    condensed: '"Avenir Next Condensed", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif',
+  };
   const q = new URLSearchParams(location.search);
   const body = document.body, root = document.documentElement.style;
-  if (q.get('theme') === 'light') body.classList.add('light');
-  if (q.get('align') === 'bottom') body.classList.add('bottom');
-  if (q.get('font') === 'serif') body.classList.add('serif');
-  const bg = q.get('bg');
-  if (bg === 'transparent') { body.classList.add('transparent'); root.setProperty('--bg', 'transparent'); }
-  else if (bg) root.setProperty('--bg', '#' + bg.replace('#', ''));
-  if (q.get('color')) root.setProperty('--fg', '#' + q.get('color').replace('#', ''));
-  const MAX = Number(q.get('max')) || null;
-
   const cur = document.getElementById('current');
   const nxt = document.getElementById('next');
+  const idle = document.getElementById('idle');
   const status = document.getElementById('status');
-  let shown = null;
+  const hex = v => '#' + String(v).replace('#', '');
+  let settings = {}, scale = 1, shown = null, shownNext = null;
+
+  // Settings from /config, then this screen's address options on top.
+  function applySettings(s) {
+    s = { ...s };
+    if (q.get('theme') === 'light') { s.bg = '#fafaf7'; s.fg = '#1a1a1a'; }
+    if (q.get('bg')) s.bg = q.get('bg') === 'transparent' ? 'transparent' : hex(q.get('bg'));
+    if (q.get('color')) s.fg = hex(q.get('color'));
+    if (q.get('align')) s.position = q.get('align');
+    if (q.get('font')) s.font = q.get('font');
+    if (q.get('size')) s.size = Number(q.get('size'));
+
+    root.setProperty('--bg', s.bg || '#111111');
+    root.setProperty('--fg', s.fg || '#f5f5f5');
+    root.setProperty('--font', FONTS[s.font] || FONTS.sans);
+    root.setProperty('--weight', s.bold === false ? '400' : '600');
+    root.setProperty('--align', s.textAlign === 'left' ? 'left' : 'center');
+    body.className = body.className.replace(/\bpos-\w+/g, '').trim();
+    body.classList.add('pos-' + (['top', 'bottom'].includes(s.position) ? s.position : 'center'));
+    body.classList.toggle('upper', !!s.uppercase);
+    body.classList.toggle('no-next', s.showNext === false);
+    body.classList.toggle('transparent', s.bg === 'transparent');
+    idle.textContent = s.idleText || 'Lyrics will appear here during worship.';
+    if (s.title) document.title = s.title;
+    document.querySelector('meta[name=theme-color]').content = s.bg === 'transparent' ? '#111111' : (s.bg || '#111111');
+    scale = Math.min(2.5, Math.max(0.4, (Number(s.size) || 100) / 100));
+    fit();
+  }
 
   // Shrink the font until the slide fits on screen, starting from the max size.
   function fit() {
-    const max = MAX || Math.min(64, Math.max(28, window.innerWidth / 14));
+    const max = Math.min(64, Math.max(28, window.innerWidth / 14)) * scale;
     const avail = window.innerHeight * 0.9;
-    let size = max;
+    const stage = document.getElementById('stage');
     const set = s => { cur.style.fontSize = s + 'px'; nxt.style.fontSize = Math.max(12, s * 0.45) + 'px'; };
+    let size = max;
     set(size);
-    while (size > 14 && (document.getElementById('stage').scrollHeight > avail ||
-                         cur.scrollWidth > cur.clientWidth + 1)) {
+    while (size > 14 && (stage.scrollHeight > avail || cur.scrollWidth > cur.clientWidth + 1)) {
       size -= 2;
       set(size);
     }
   }
 
   function show(data) {
+    if (data.settings && JSON.stringify(data.settings) !== JSON.stringify(settings)) {
+      settings = data.settings;
+      applySettings(settings);
+    }
     status.className = data.connected ? 'ok' : '';
     status.textContent = data.connected ? '' : 'Waiting for lyrics…';
     body.classList.toggle('idle', !data.connected);
-    if (!data.connected) data = { ...data, current: '', next: '' };
-    if (data.current === shown && nxt.textContent === (data.next || '')) return;
-    shown = data.current;
+    const text = data.connected ? (data.current || '') : '';
+    const next = data.connected ? (data.next || '') : '';
+    if (text === shown && next === shownNext) return;
+    shown = text; shownNext = next;
     cur.classList.add('fading');
     setTimeout(() => {
-      cur.textContent = data.current || '';
-      nxt.textContent = data.next || '';
+      cur.textContent = text;
+      nxt.textContent = next;
       fit();
       cur.classList.remove('fading');
     }, 150);
@@ -112,19 +141,32 @@
   function connect() {
     const es = new EventSource('events'); // relative, so it also works inside an embed
     es.onmessage = e => show(JSON.parse(e.data));
-    es.onerror = () => {
-      status.className = '';
-      status.textContent = 'Reconnecting…';
-    };
+    es.onerror = () => { status.className = ''; status.textContent = 'Reconnecting…'; };
   }
 
   // Safety net: if live updates are held up somewhere, catch up every 5 seconds.
-  setInterval(async () => {
+  if (!q.has('preview')) setInterval(async () => {
     try { const r = await fetch('api/current', { cache: 'no-store' }); if (r.ok) show(await r.json()); } catch {}
   }, 5000);
 
   window.addEventListener('resize', fit);
-  connect();
+  applySettings({});
+
+  if (q.has('preview')) {
+    // Used by the /config page: show sample lyrics with unsaved settings.
+    const sample = { connected: true,
+      current: 'Amazing grace, how sweet the sound\nThat saved a wretch like me\nI once was lost, but now am found\nWas blind, but now I see',
+      next: 'Twas grace that taught my heart to fear\nAnd grace my fears relieved' };
+    window.addEventListener('message', e => {
+      if (e.origin !== location.origin || !e.data || e.data.type !== 'preview') return;
+      settings = e.data.settings;
+      applySettings(settings);
+      show({ ...sample, next: settings.showNext ? sample.next : '' });
+    });
+    show(sample);
+  } else {
+    connect();
+  }
 </script>
 </body>
 </html>
